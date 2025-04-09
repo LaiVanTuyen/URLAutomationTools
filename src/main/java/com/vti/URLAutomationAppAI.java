@@ -47,6 +47,8 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import javax.swing.JSpinner;
+import javax.swing.SpinnerNumberModel;
 
 
 
@@ -68,10 +70,10 @@ public class URLAutomationAppAI extends JFrame {
     private Color successColor = new Color(76, 175, 80);
     private Color errorColor = new Color(244, 67, 54);
     private List<String> urls = new ArrayList();
-    private WebDriver driver;
     private Font mainFont = new Font("Segoe UI", 0, 14);
     private Font headerFont = new Font("Segoe UI", 1, 22);
     private Font buttonFont = new Font("Segoe UI", 1, 14);
+    private JSpinner threadCountSpinner;
 
     public URLAutomationAppAI() {
         this.setTitle("URL Automation Tool");
@@ -170,6 +172,20 @@ public class URLAutomationAppAI extends JFrame {
         loginPanel.setBackground(this.backgroundColor);
         loginPanel.add(credentialsPanel, "Center");
         contentPanel.add(loginPanel, "North");
+
+        // Add thread count configuration
+        JPanel configPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        configPanel.setBackground(this.backgroundColor);
+        configPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createLineBorder(this.accentColor, 1), "Configuration", 1, 2, this.mainFont, this.textColor));
+        JLabel threadCountLabel = new JLabel("Thread Count:");
+        threadCountLabel.setFont(this.mainFont);
+        threadCountLabel.setForeground(this.textColor);
+        this.threadCountSpinner = new JSpinner(new SpinnerNumberModel(7, 1, 20, 1));
+        this.threadCountSpinner.setFont(this.mainFont);
+        configPanel.add(threadCountLabel);
+        configPanel.add(this.threadCountSpinner);
+        contentPanel.add(configPanel, "South");
+
         return contentPanel;
     }
 
@@ -438,51 +454,38 @@ public class URLAutomationAppAI extends JFrame {
                     options.addArguments(new String[]{"--start-maximized"});
                     this.statusLabel.setText("Status: Initializing Chrome...");
 
-                    try {
-                        this.driver = new ChromeDriver(options);
-                        SwingUtilities.invokeLater(new Runnable() {
-                            public void run() {
-                                URLAutomationAppAI.this.progressLabel.setText("0/" + URLAutomationAppAI.this.urls.size());
-                            }
-                        });
-                        (new Thread(new Runnable() {
-                            public void run() {
-                                try {
-                                    URLAutomationAppAI.this.processURLs();
-                                } catch (Exception var5) {
-                                    final Exception e = var5;
-                                    SwingUtilities.invokeLater(new Runnable() {
-                                        public void run() {
-                                            JOptionPane.showMessageDialog(URLAutomationAppAI.this, "Error during automation: " + e.getMessage());
-                                            URLAutomationAppAI.this.statusLabel.setText("Status: Error during automation");
-                                        }
-                                    });
-                                } finally {
-                                    if (URLAutomationAppAI.this.driver != null) {
-                                        URLAutomationAppAI.this.driver.quit();
+                    SwingUtilities.invokeLater(new Runnable() {
+                        public void run() {
+                            URLAutomationAppAI.this.progressLabel.setText("0/" + URLAutomationAppAI.this.urls.size());
+                        }
+                    });
+                    (new Thread(new Runnable() {
+                        public void run() {
+                            try {
+                                URLAutomationAppAI.this.processURLs();
+                            } catch (Exception var5) {
+                                final Exception e = var5;
+                                SwingUtilities.invokeLater(new Runnable() {
+                                    public void run() {
+                                        JOptionPane.showMessageDialog(URLAutomationAppAI.this, "Error during automation: " + e.getMessage());
+                                        URLAutomationAppAI.this.statusLabel.setText("Status: Error during automation");
                                     }
-
-                                }
-
+                                });
                             }
-                        })).start();
-                        this.statusLabel.setText("Status: Automation started");
-                    } catch (Exception var7) {
-                        JOptionPane.showMessageDialog(this, "Error initializing ChromeDriver: " + var7.getMessage() + "\n\nTry updating your Chrome browser or downloading a matching ChromeDriver version.");
-                        this.statusLabel.setText("Status: Failed to initialize ChromeDriver");
-                    }
+                        }
+                    })).start();
+                    this.statusLabel.setText("Status: Automation started");
                 } catch (Exception var8) {
                     JOptionPane.showMessageDialog(this, "Error initializing WebDriver: " + var8.getMessage() + "\n\nPlease ensure Chrome is installed and your system has internet access.");
                     this.statusLabel.setText("Status: Error initializing WebDriver");
                 }
-
             }
         }
     }
 
     private void processURLs() {
         File outputFile = new File("danh_sach_url_da_dung.txt");
-        final int NUM_THREADS = 7; // Số lượng URL xử lý đồng thời
+        int numThreads = (int) threadCountSpinner.getValue(); // Số lượng URL xử lý đồng thời
         List<Thread> threads = new ArrayList<>();
         List<WebDriver> drivers = new ArrayList<>();
 
@@ -491,16 +494,16 @@ public class URLAutomationAppAI extends JFrame {
             final FileWriter writer = new FileWriter(outputFile, true);
 
             // Chia danh sách URL thành các phần nhỏ
-            int urlsPerThread = (int) Math.ceil((double) urls.size() / NUM_THREADS);
+            int urlsPerThread = (int) Math.ceil((double) urls.size() / numThreads);
             
-            for (int i = 0; i < NUM_THREADS; i++) {
+            // Tạo và khởi động các luồng
+            for (int i = 0; i < numThreads && i * urlsPerThread < urls.size(); i++) {
                 final int threadIndex = i;
                 final int startIndex = i * urlsPerThread;
                 final int endIndex = Math.min(startIndex + urlsPerThread, urls.size());
                 
-                if (startIndex >= urls.size()) break;
-
                 Thread thread = new Thread(() -> {
+                    WebDriver threadDriver = null;
                     try {
                         // Tạo ChromeDriver riêng cho mỗi luồng
                         ChromeOptions options = new ChromeOptions();
@@ -511,7 +514,7 @@ public class URLAutomationAppAI extends JFrame {
                         options.addArguments("--disable-popup-blocking");
                         options.addArguments("--start-maximized");
                         
-                        WebDriver threadDriver = new ChromeDriver(options);
+                        threadDriver = new ChromeDriver(options);
                         synchronized (drivers) {
                             drivers.add(threadDriver);
                         }
@@ -573,6 +576,17 @@ public class URLAutomationAppAI extends JFrame {
                         }
                     } catch (Exception e) {
                         updateStatus("Thread " + threadIndex + " error: " + e.getMessage(), StatusType.ERROR);
+                    } finally {
+                        if (threadDriver != null) {
+                            try {
+                                threadDriver.quit();
+                                synchronized (drivers) {
+                                    drivers.remove(threadDriver);
+                                }
+                            } catch (Exception e) {
+                                System.err.println("Error quitting WebDriver in thread " + threadIndex + ": " + e.getMessage());
+                            }
+                        }
                     }
                 });
 
@@ -583,15 +597,6 @@ public class URLAutomationAppAI extends JFrame {
             // Đợi tất cả các luồng hoàn thành
             for (Thread thread : threads) {
                 thread.join();
-            }
-
-            // Đóng tất cả các driver
-            for (WebDriver driver : drivers) {
-                try {
-                    driver.quit();
-                } catch (Exception e) {
-                    System.err.println("Error quitting WebDriver: " + e.getMessage());
-                }
             }
 
         } catch (IOException | InterruptedException e) {
@@ -631,16 +636,6 @@ public class URLAutomationAppAI extends JFrame {
     }
 
     private void cleanupResources() {
-        Exception e;
-        if (this.driver != null) {
-            try {
-                this.driver.quit();
-            } catch (Exception var4) {
-                e = var4;
-                System.err.println("Error quitting WebDriver: " + e.getMessage());
-            }
-        }
-
         try {
             String os = System.getProperty("os.name").toLowerCase();
             Process process;
@@ -652,11 +647,9 @@ public class URLAutomationAppAI extends JFrame {
 
             process.waitFor();
             System.out.println("ChromeDriver processes terminated");
-        } catch (Exception var3) {
-            e = var3;
+        } catch (Exception e) {
             System.err.println("Error terminating ChromeDriver processes: " + e.getMessage());
         }
-
     }
 
     public static void main(String[] args) {
