@@ -41,6 +41,8 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+
+import io.github.bonigarcia.wdm.WebDriverManager;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
@@ -345,7 +347,7 @@ public class URLAutomationAppAI extends JFrame {
 
     }
 
-    private void setupChromeDriver() {
+    /*private void setupChromeDriver() {
         try {
             String tempDir = System.getProperty("java.io.tmpdir");
             String os = System.getProperty("os.name").toLowerCase();
@@ -421,7 +423,100 @@ public class URLAutomationAppAI extends JFrame {
                 "and place it in the same directory as this application.", 
                 "ChromeDriver Error", JOptionPane.ERROR_MESSAGE);
         }
+    }*/
+
+    /*private void setupChromeDriver() {
+        try {
+            String tempDir = System.getProperty("java.io.tmpdir");
+            String os = System.getProperty("os.name").toLowerCase();
+            String chromeDriverResource;
+            String chromeDriverName;
+
+            if (os.contains("win")) {
+                chromeDriverResource = "/drivers/chromedriver.exe";
+                chromeDriverName = "chromedriver.exe";
+            } else if (os.contains("mac")) {
+                chromeDriverResource = "/drivers/chromedriver";
+                chromeDriverName = "chromedriver";
+            } else {
+                chromeDriverResource = "/drivers/chromedriver";
+                chromeDriverName = "chromedriver";
+            }
+
+            File chromeDriverFile = new File(tempDir + File.separator + chromeDriverName);
+
+            // Luôn giải nén ChromeDriver từ resources, ghi đè nếu file đã tồn tại
+            try (InputStream in = URLAutomationAppAI.class.getResourceAsStream(chromeDriverResource)) {
+                if (in == null) {
+                    // Nếu không tìm thấy resource, yêu cầu người dùng chọn file ChromeDriver
+                    int choice = JOptionPane.showConfirmDialog(
+                            this,
+                            "ChromeDriver không được tìm thấy trong ứng dụng. Bạn có muốn chọn file ChromeDriver thủ công không?",
+                            "ChromeDriver Not Found",
+                            JOptionPane.YES_NO_OPTION);
+
+                    if (choice == JOptionPane.YES_OPTION) {
+                        JFileChooser fileChooser = new JFileChooser();
+                        fileChooser.setDialogTitle("Chọn ChromeDriver");
+
+                        if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                            File selectedFile = fileChooser.getSelectedFile();
+                            Files.copy(selectedFile.toPath(), chromeDriverFile.toPath(),
+                                    StandardCopyOption.REPLACE_EXISTING);
+                            System.out.println("ChromeDriver copied from: " + selectedFile.getAbsolutePath());
+                        } else {
+                            throw new IOException("ChromeDriver not selected by user");
+                        }
+                    } else {
+                        throw new IOException("ChromeDriver resource not found: " + chromeDriverResource);
+                    }
+                } else {
+                    // Sử dụng StandardCopyOption.REPLACE_EXISTING để ghi đè file cũ nếu có
+                    Files.copy(in, chromeDriverFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    System.out.println("ChromeDriver extracted/updated to: " + chromeDriverFile.getAbsolutePath());
+                }
+            }
+
+            if (!os.contains("win")) {
+                chromeDriverFile.setExecutable(true);
+            }
+
+            System.setProperty("webdriver.chrome.driver", chromeDriverFile.getAbsolutePath());
+            System.out.println("ChromeDriver set up at: " + chromeDriverFile.getAbsolutePath());
+            statusLabel.setText("Status: ChromeDriver ready");
+
+        } catch (IOException e) {
+            System.err.println("Failed to set up ChromeDriver: " + e.getMessage());
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this,
+                    "Failed to set up ChromeDriver: " + e.getMessage() +
+                            "\n\nPlease download ChromeDriver manually from https://chromedriver.chromium.org/downloads " +
+                            "and place it in the same directory as this application.",
+                    "ChromeDriver Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }*/
+
+    private void setupChromeDriver() {
+        try {
+            System.out.println("Setting up ChromeDriver using WebDriverManager...");
+            // WebDriverManager sẽ tự động tải và cấu hình ChromeDriver phù hợp
+            WebDriverManager.chromedriver().setup();
+
+            // Không cần setProperty thủ công nữa, WebDriverManager đã làm điều đó
+            System.out.println("ChromeDriver setup completed by WebDriverManager.");
+            statusLabel.setText("Status: ChromeDriver ready");
+
+        } catch (Exception e) { // Bắt Exception chung vì WebDriverManager có thể ném nhiều loại lỗi
+            System.err.println("Failed to set up ChromeDriver using WebDriverManager: " + e.getMessage());
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(this,
+                    "Failed to automatically set up ChromeDriver: " + e.getMessage() +
+                            "\n\nPlease ensure you have a working internet connection and Google Chrome installed.",
+                    "ChromeDriver Setup Error", JOptionPane.ERROR_MESSAGE);
+        }
     }
+
+
 
     private void startAutomation() {
         String urlContent = this.urlTextArea.getText().trim();
