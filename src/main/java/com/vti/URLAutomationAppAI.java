@@ -5,6 +5,7 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Cursor;
+import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -17,15 +18,22 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.URL;
 import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -42,7 +50,6 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
-import io.github.bonigarcia.wdm.WebDriverManager;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
@@ -498,21 +505,249 @@ public class URLAutomationAppAI extends JFrame {
 
     private void setupChromeDriver() {
         try {
-            System.out.println("Setting up ChromeDriver using WebDriverManager...");
-            // WebDriverManager sẽ tự động tải và cấu hình ChromeDriver phù hợp
-            WebDriverManager.chromedriver().setup();
-
-            // Không cần setProperty thủ công nữa, WebDriverManager đã làm điều đó
-            System.out.println("ChromeDriver setup completed by WebDriverManager.");
-            statusLabel.setText("Status: ChromeDriver ready");
-
-        } catch (Exception e) { // Bắt Exception chung vì WebDriverManager có thể ném nhiều loại lỗi
-            System.err.println("Failed to set up ChromeDriver using WebDriverManager: " + e.getMessage());
+            System.out.println("Setting up ChromeDriver using auto-detection...");
+            String tempDir = System.getProperty("java.io.tmpdir");
+            String os = System.getProperty("os.name").toLowerCase();
+            
+            // Cập nhật trạng thái
+            if (statusLabel != null) {
+                statusLabel.setText("Status: Đang phát hiện phiên bản Chrome...");
+            }
+            
+            // Phát hiện phiên bản Chrome đã cài đặt
+            String chromeVersion = detectChromeVersion();
+            System.out.println("Detected Chrome version: " + chromeVersion);
+            
+            if (statusLabel != null) {
+                statusLabel.setText("Status: Đang tải ChromeDriver cho Chrome " + chromeVersion + "...");
+            }
+            
+            // Xác định URL tải ChromeDriver dựa trên phiên bản Chrome
+            String driverUrl = getCompatibleChromeDriverUrl(chromeVersion);
+            System.out.println("ChromeDriver download URL: " + driverUrl);
+            
+            // Tải và giải nén ChromeDriver
+            String driverPath = downloadAndExtractChromeDriver(driverUrl, tempDir, os);
+            
+            // Thiết lập đường dẫn
+            System.setProperty("webdriver.chrome.driver", driverPath);
+            System.out.println("ChromeDriver set up at: " + driverPath);
+            
+            if (statusLabel != null) {
+                statusLabel.setText("Status: ChromeDriver ready");
+            }
+        } catch (Exception e) {
+            handleChromeDriverSetupError(e);
+        }
+    }
+    
+    private String detectChromeVersion() {
+        try {
+            String os = System.getProperty("os.name").toLowerCase();
+            Process process;
+            
+            if (os.contains("win")) {
+                // Windows: Sử dụng registry để lấy phiên bản Chrome
+                process = Runtime.getRuntime().exec(
+                    "reg query \"HKEY_CURRENT_USER\\Software\\Google\\Chrome\\BLBeacon\" /v version");
+            } else if (os.contains("mac")) {
+                // macOS
+                process = Runtime.getRuntime().exec(
+                    "/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --version");
+            } else {
+                // Linux
+                process = Runtime.getRuntime().exec("google-chrome --version");
+            }
+            
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            String line;
+            String version = "";
+            
+            while ((line = reader.readLine()) != null) {
+                if (os.contains("win") && line.contains("version")) {
+                    // Trích xuất phiên bản từ registry output (REG_SZ    107.0.5304.107)
+                    version = line.trim().split("\\s+")[2];
+                } else if (line.toLowerCase().contains("chrome")) {
+                    // Trích xuất phiên bản từ "Google Chrome XX.X.XXXX.XX"
+                    version = line.replaceAll(".*Chrome\\s+", "").replaceAll("\\s.*", "");
+                }
+            }
+            
+            // Chỉ lấy phiên bản chính (major version)
+            if (version.contains(".")) {
+                return version.split("\\.")[0];
+            }
+            return version;
+        } catch (Exception e) {
+            System.err.println("Error detecting Chrome version: " + e.getMessage());
             e.printStackTrace();
-            JOptionPane.showMessageDialog(this,
-                    "Failed to automatically set up ChromeDriver: " + e.getMessage() +
-                            "\n\nPlease ensure you have a working internet connection and Google Chrome installed.",
-                    "ChromeDriver Setup Error", JOptionPane.ERROR_MESSAGE);
+            // Phiên bản mặc định nếu không thể xác định
+            return "114"; 
+        }
+    }
+    
+    private String getCompatibleChromeDriverUrl(String chromeVersion) {
+        // Bảng ánh xạ phiên bản Chrome với phiên bản ChromeDriver đã biết cho các phiên bản mới nhất
+        // Cập nhật bảng này khi có phiên bản Chrome mới
+        java.util.Map<String, String> knownVersions = new java.util.HashMap<>();
+        knownVersions.put("136", "136.0.7103.9400");
+        knownVersions.put("135", "135.0.7049.9500");
+        knownVersions.put("134", "134.0.6998.16500");
+        knownVersions.put("133", "133.0.6943.14100");
+        knownVersions.put("132", "132.0.6868.10300");
+        knownVersions.put("131", "131.0.6844.16000");
+        knownVersions.put("130", "130.0.6736.14800");
+        knownVersions.put("129", "129.0.6707.7100");
+        knownVersions.put("128", "128.0.6631.10400");
+        knownVersions.put("127", "127.0.6649.15100");
+        knownVersions.put("126", "126.0.6478.14400");
+        knownVersions.put("125", "125.0.6422.11300");
+        knownVersions.put("114", "114.0.5735.90");
+        
+        String os = System.getProperty("os.name").toLowerCase();
+        String platform = os.contains("win") ? "win32" : os.contains("mac") ? "mac64" : "linux64";
+        
+        // Trường hợp 1: Kiểm tra xem có phiên bản đã biết hay không
+        if (knownVersions.containsKey(chromeVersion)) {
+            String driverVersion = knownVersions.get(chromeVersion);
+            System.out.println("Using known ChromeDriver version " + driverVersion + " for Chrome " + chromeVersion);
+            return "https://chromedriver.storage.googleapis.com/" + driverVersion + "/chromedriver_" + platform + ".zip";
+        }
+        
+        // Trường hợp 2: Thử API thông thường của Google
+        try {
+            URL url = new URL("https://chromedriver.storage.googleapis.com/LATEST_RELEASE_" + chromeVersion);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(url.openStream()));
+            String driverVersion = reader.readLine();
+            reader.close();
+            
+            System.out.println("Found ChromeDriver version " + driverVersion + " via Google API");
+            return "https://chromedriver.storage.googleapis.com/" + driverVersion + "/chromedriver_" + platform + ".zip";
+        } catch (Exception e) {
+            System.err.println("Error getting ChromeDriver URL from Google API: " + e.getMessage());
+            
+            // Trường hợp 3: Thử lấy phiên bản mới nhất
+            try {
+                URL url = new URL("https://chromedriver.storage.googleapis.com/LATEST_RELEASE");
+                BufferedReader reader = new BufferedReader(new InputStreamReader(url.openStream()));
+                String latestVersion = reader.readLine();
+                reader.close();
+                
+                System.out.println("Using latest available ChromeDriver version: " + latestVersion);
+                return "https://chromedriver.storage.googleapis.com/" + latestVersion + "/chromedriver_" + platform + ".zip";
+            } catch (Exception e2) {
+                System.err.println("Error getting latest ChromeDriver version: " + e2.getMessage());
+                
+                // Trường hợp 4: Dùng phiên bản đã biết mới nhất
+                String newestKnownVersion = knownVersions.get("136"); // Lấy phiên bản mới nhất từ bảng
+                System.out.println("Falling back to newest known ChromeDriver version: " + newestKnownVersion);
+                return "https://chromedriver.storage.googleapis.com/" + newestKnownVersion + "/chromedriver_" + platform + ".zip";
+            }
+        }
+    }
+    
+    private String downloadAndExtractChromeDriver(String driverUrl, String tempDir, String os) throws Exception {
+        String driverZip = tempDir + File.separator + "chromedriver_" + System.currentTimeMillis() + ".zip";
+        String driverExe = tempDir + File.separator + (os.contains("win") ? "chromedriver.exe" : "chromedriver");
+        
+        // Tải file ChromeDriver.zip
+        URL url = new URL(driverUrl);
+        try (InputStream in = url.openStream();
+             FileOutputStream out = new FileOutputStream(driverZip)) {
+            byte[] buffer = new byte[4096];
+            int bytesRead;
+            while ((bytesRead = in.read(buffer)) != -1) {
+                out.write(buffer, 0, bytesRead);
+            }
+        }
+        
+        // Giải nén file zip
+        try (ZipInputStream zipIn = new ZipInputStream(new FileInputStream(driverZip))) {
+            ZipEntry entry = zipIn.getNextEntry();
+            while (entry != null) {
+                if (!entry.isDirectory() && entry.getName().contains("chromedriver")) {
+                    try (FileOutputStream out = new FileOutputStream(driverExe)) {
+                        byte[] buffer = new byte[4096];
+                        int bytesRead;
+                        while ((bytesRead = zipIn.read(buffer)) != -1) {
+                            out.write(buffer, 0, bytesRead);
+                        }
+                    }
+                }
+                zipIn.closeEntry();
+                entry = zipIn.getNextEntry();
+            }
+        }
+        
+        // Đặt quyền thực thi cho file trên macOS/Linux
+        if (!os.contains("win")) {
+            File driverFile = new File(driverExe);
+            if (!driverFile.setExecutable(true)) {
+                System.err.println("Warning: Could not set executable permission for ChromeDriver");
+            }
+        }
+        
+        // Xóa file zip tạm thời
+        new File(driverZip).delete();
+        
+        return driverExe;
+    }
+    
+    private void handleChromeDriverSetupError(Exception e) {
+        System.err.println("Failed to set up ChromeDriver: " + e.getMessage());
+        e.printStackTrace();
+        
+        if (statusLabel != null) {
+            statusLabel.setText("Status: Lỗi cài đặt ChromeDriver");
+        }
+        
+        // Hiển thị tùy chọn cho người dùng tải và chọn ChromeDriver thủ công
+        int choice = JOptionPane.showConfirmDialog(
+            this,
+            "Không thể tự động cài đặt ChromeDriver. Nguyên nhân có thể là:\n" +
+            "1. Không có kết nối internet\n" +
+            "2. Google Chrome chưa được cài đặt\n" +
+            "3. Phiên bản Chrome quá mới chưa có ChromeDriver tương thích\n\n" +
+            "Bạn có muốn tải ChromeDriver thủ công không?",
+            "ChromeDriver Setup Error",
+            JOptionPane.YES_NO_OPTION);
+            
+        if (choice == JOptionPane.YES_OPTION) {
+            try {
+                // Mở trang web ChromeDriver để người dùng tải xuống
+                Desktop.getDesktop().browse(new URI("https://chromedriver.chromium.org/downloads"));
+                
+                JOptionPane.showMessageDialog(this,
+                    "1. Tải ChromeDriver phù hợp với phiên bản Chrome của bạn.\n" +
+                    "2. Giải nén file zip để có được file chromedriver.exe (Windows) hoặc chromedriver (Mac/Linux).\n" +
+                    "3. Chọn file này trong hộp thoại tiếp theo.",
+                    "Hướng dẫn", JOptionPane.INFORMATION_MESSAGE);
+                
+                // Hiển thị FileChooser để người dùng chọn ChromeDriver đã tải
+                JFileChooser fileChooser = new JFileChooser();
+                fileChooser.setDialogTitle("Chọn ChromeDriver đã tải");
+                
+                if (fileChooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                    File selectedFile = fileChooser.getSelectedFile();
+                    String driverPath = selectedFile.getAbsolutePath();
+                    
+                    // Đặt quyền thực thi nếu cần
+                    if (!System.getProperty("os.name").toLowerCase().contains("win")) {
+                        selectedFile.setExecutable(true);
+                    }
+                    
+                    System.setProperty("webdriver.chrome.driver", driverPath);
+                    System.out.println("ChromeDriver manually set to: " + driverPath);
+                    
+                    if (statusLabel != null) {
+                        statusLabel.setText("Status: ChromeDriver đã được thiết lập thủ công");
+                    }
+                }
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this,
+                    "Không thể mở trình duyệt hoặc thiết lập ChromeDriver: " + ex.getMessage(),
+                    "Error", JOptionPane.ERROR_MESSAGE);
+            }
         }
     }
 
