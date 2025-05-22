@@ -22,7 +22,7 @@ A Java-based application that automates processing multiple URLs simultaneously 
 
 ## Requirements
 
-- Java 8 or higher
+- Java 11 or higher
 - Google Chrome browser
 - Internet connection (only required for first run or when ChromeDriver needs updating)
 
